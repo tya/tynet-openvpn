@@ -17,12 +17,19 @@ image:
 service:
   # MetalLB L2 pool for this cluster is 10.0.60.60-10.0.60.79 (see
   # tynet-infra's playbooks/microk8s.yml); .60 is cloud-init.tynet.us,
-  # .61 is argocd.tynet.us. externalTrafficPolicy Local so only the node
-  # actually running the pod answers ARP for this IP -- no extra
-  # cross-node hop, and it also means the IP only ever "floats" by virtue
-  # of which node has the pod, not by load-balancing across replicas
-  # (there's only ever one).
-  loadBalancerIP: 10.0.60.62
+  # .61 is argocd.tynet.us. Originally guessed .62 was free too, but it's
+  # actually already claimed by meal-planner-status (an undocumented
+  # second LoadBalancer Service meal-planner's chart creates) -- found
+  # live, as a MetalLB AllocationFailed event ("can't change sharing key
+  # ... address also in use"), when this Service failed to get an
+  # external IP on first real sync. .63 is confirmed free (checked every
+  # LoadBalancer Service's assigned IP across the cluster, not just the
+  # ones this comment already knew about). externalTrafficPolicy Local so
+  # only the node actually running the pod answers ARP for this IP -- no
+  # extra cross-node hop, and it also means the IP only ever "floats" by
+  # virtue of which node has the pod, not by load-balancing across
+  # replicas (there's only ever one).
+  loadBalancerIP: 10.0.60.63
   externalTrafficPolicy: Local
 
 openvpn:

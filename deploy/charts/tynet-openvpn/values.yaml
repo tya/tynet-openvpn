@@ -5,13 +5,25 @@ image:
   tag: latest
   pullPolicy: Always
 
-# Pinned to pi1 -- same single-node pinning convention as meal-planner and
-# tynet-cloud-init. Required here specifically: hostNetwork is what lets
-# the entrypoint see and bridge the real vlan40 link that
-# roles/vlan-interfaces created on the node; a non-hostNetwork pod would
-# only see Calico's virtual interfaces.
-nodeSelector:
-  kubernetes.io/hostname: pi1
+# No nodeSelector -- this pod is floatable across any of the cluster's
+# nodes (all three now carry the vlan40 link roles/vlan-interfaces
+# creates). hostNetwork is still required so the entrypoint can see and
+# bridge whichever node's real vlan40 it lands on; a non-hostNetwork pod
+# would only see Calico's virtual interfaces. State (PKI, per-user TOTP
+# secrets) lives in Kubernetes Secrets rather than a PVC specifically so
+# rescheduling doesn't depend on this cluster's node-local hostpath
+# storage class.
+
+service:
+  # MetalLB L2 pool for this cluster is 10.0.60.60-10.0.60.79 (see
+  # tynet-infra's playbooks/microk8s.yml); .60 is cloud-init.tynet.us,
+  # .61 is argocd.tynet.us. externalTrafficPolicy Local so only the node
+  # actually running the pod answers ARP for this IP -- no extra
+  # cross-node hop, and it also means the IP only ever "floats" by virtue
+  # of which node has the pod, not by load-balancing across replicas
+  # (there's only ever one).
+  loadBalancerIP: 10.0.60.62
+  externalTrafficPolicy: Local
 
 openvpn:
   port: 1194
@@ -23,7 +35,3 @@ openvpn:
   # 10.0.100.0/24) -- no redirect-gateway, so only home-bound traffic
   # transits the tunnel.
   pushRoutes: "10.0.0.0 255.255.0.0"
-
-storage:
-  size: 1Gi
-  storageClassName: ""

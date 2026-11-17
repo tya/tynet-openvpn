@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tynet-openvpn
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: tynet-openvpn
+  template:
+    metadata:
+      labels:
+        app: tynet-openvpn
+    spec:
+      # hostNetwork is load-bearing: it's what lets entrypoint.sh see and
+      # bridge the node's real vlan40 link. A non-hostNetwork pod would
+      # only see Calico's virtual interfaces, with no VLAN 40 to join.
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      nodeSelector:
+{{ toYaml .Values.nodeSelector | indent 8 }}
+      containers:
+        - name: openvpn
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            capabilities:
+              add: ["NET_ADMIN"]
+          env:
+            - name: OPENVPN_PORT
+              value: "{{ .Values.openvpn.port }}"
+            - name: OPENVPN_PROTO
+              value: "{{ .Values.openvpn.proto }}"
+            - name: BRIDGE_NAME
+              value: "{{ .Values.openvpn.bridgeName }}"
+            - name: BRIDGE_UPLINK
+              value: "{{ .Values.openvpn.bridgeUplink }}"
+            - name: TAP_DEVICE
+              value: "{{ .Values.openvpn.tapDevice }}"
+            - name: PUSH_ROUTES
+              value: "{{ .Values.openvpn.pushRoutes }}"
+          ports:
+            - name: openvpn
+              containerPort: {{ .Values.openvpn.port }}
+              protocol: {{ .Values.openvpn.proto | upper }}
+          volumeMounts:
+            - name: state
+              mountPath: /etc/openvpn
+            - name: dev-net-tun
+              mountPath: /dev/net/tun
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: tynet-openvpn-state
+        - name: dev-net-tun
+          hostPath:
+            path: /dev/net/tun
+            type: CharDevice

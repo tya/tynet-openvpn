@@ -1,0 +1,6 @@
+apiVersion: v2
+name: tynet-openvpn
+description: Self-hosted OpenVPN remote-access server, bridged into VLAN 40
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

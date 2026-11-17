@@ -1,0 +1,29 @@
+namespace: openvpn
+
+image:
+  repository: ghcr.io/tya/tynet-openvpn
+  tag: latest
+  pullPolicy: Always
+
+# Pinned to pi1 -- same single-node pinning convention as meal-planner and
+# tynet-cloud-init. Required here specifically: hostNetwork is what lets
+# the entrypoint see and bridge the real vlan40 link that
+# roles/vlan-interfaces created on the node; a non-hostNetwork pod would
+# only see Calico's virtual interfaces.
+nodeSelector:
+  kubernetes.io/hostname: pi1
+
+openvpn:
+  port: 1194
+  proto: udp
+  bridgeName: br-vpn
+  bridgeUplink: vlan40
+  tapDevice: tap0
+  # One aggregate route covers every existing VLAN (10.0.10.0/24 through
+  # 10.0.100.0/24) -- no redirect-gateway, so only home-bound traffic
+  # transits the tunnel.
+  pushRoutes: "10.0.0.0 255.255.0.0"
+
+storage:
+  size: 1Gi
+  storageClassName: ""

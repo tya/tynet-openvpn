@@ -43,11 +43,14 @@ flowchart LR
     client["Client: Mac or iPhone<br/>OpenVPN Connect"]
     gw["UniFi Gateway<br/>WAN :1194/udp -- port forward"]
 
-    subgraph cluster["microk8s cluster -- VLAN 60, ops (10.0.60.0/24)"]
+    subgraph dmzzone["VLAN 110 -- dmz (10.0.110.0/24)"]
         direction LR
-        vip["Service tynet-openvpn<br/>LoadBalancer VIP 10.0.60.63<br/>MetalLB -- floats with the pod"]
+        vip["Service tynet-openvpn<br/>LoadBalancer VIP 10.0.110.2<br/>MetalLB -- floats with the pod"]
+    end
 
-        subgraph pod["tynet-openvpn pod -- hostNetwork<br/>runs on pi1, pi2, or pi3"]
+    subgraph cluster["microk8s cluster -- pod itself still runs on pi1, pi2, or pi3 (VLAN 60, ops)"]
+        direction LR
+        subgraph pod["tynet-openvpn pod -- hostNetwork"]
             direction TB
             tls["1. TLS handshake<br/>client cert checked against ca.crt"]
             pam["2. PAM auth-pam plugin<br/>pam_google_authenticator checks TOTP<br/>the OpenVPN 'password' field"]
@@ -70,21 +73,22 @@ flowchart LR
         rest["Rest of the home network<br/>VLANs 10-100, via pushed route<br/>10.0.0.0/255.255.0.0"]
     end
 
-    client -->|"UDP 1194"| gw -->|"forwards to the VIP"| vip --> tls
+    client -->|"UDP 1194"| gw -->|"forwards to the dmz VIP"| vip --> tls
     bridge -->|"client's tap device joins the bridge<br/>client becomes a real VLAN 40 member"| dhcp
     dhcp -->|"real 10.0.40.x lease"| client
     bridge -.->|"pushed route"| rest
 ```
 
-**VLAN 60 is where the cluster lives; VLAN 40 is where the client ends
-up.** Those are deliberately different networks. pi1/pi2/pi3 are all on
-`ops` (VLAN 60) — that's where the Service VIP and the pod itself run,
-regardless of which node gets scheduled. But the pod's job is to bridge
-the client into a *second*, separate VLAN (`vpn`, VLAN 40) that nothing
-else in the cluster is on. The client is never a member of VLAN 60; it
-only ever talks to the one VIP there (`10.0.60.63:1194/udp`), then lands
-on VLAN 40 as a real member via the bridge, indistinguishable from a
-wired device there.
+**Three VLANs are involved, each for a different reason.** The pod
+itself still runs on one of pi1/pi2/pi3 — the hardware nodes' own
+network, VLAN 60 (`ops`). But the Service's externally-reachable VIP
+sits on a separate network, VLAN 110 (`dmz`) — the one VLAN in this
+cluster that takes raw, pre-authentication traffic from the WAN port
+forward; nothing else exposed here (`cloud-init.tynet.us`,
+`argocd.tynet.us`) shares it, they stay on `ops` since they're reached
+from the LAN, never the WAN. The client is never a member of either —
+after authenticating against the dmz-facing VIP, it lands as a real
+member of a *third* network, VLAN 40 (`vpn`), via the bridge.
 
 **Two factors, checked in order, both inside the pod:**
 
@@ -116,8 +120,9 @@ from the real `10.0.40.1` server, same as anything else on that VLAN.
   what lets the pod actually reschedule to any of the three nodes without
   losing its identity or locking out enrolled users.
 - A MetalLB `LoadBalancer` Service gives it one stable VIP
-  (`10.0.60.63`) regardless of which node ends up running it — the WAN
-  port forward points at that VIP, never at a node's own address.
+  (`10.0.110.2`, on the dmz network) regardless of which node ends up
+  running it — the WAN port forward points at that VIP, never at a
+  node's own address.
 
 ## Image
 

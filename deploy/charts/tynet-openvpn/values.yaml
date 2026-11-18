@@ -15,21 +15,20 @@ image:
 # storage class.
 
 service:
-  # MetalLB L2 pool for this cluster is 10.0.60.60-10.0.60.79 (see
-  # tynet-infra's playbooks/microk8s.yml); .60 is cloud-init.tynet.us,
-  # .61 is argocd.tynet.us. Originally guessed .62 was free too, but it's
-  # actually already claimed by meal-planner-status (an undocumented
-  # second LoadBalancer Service meal-planner's chart creates) -- found
-  # live, as a MetalLB AllocationFailed event ("can't change sharing key
-  # ... address also in use"), when this Service failed to get an
-  # external IP on first real sync. .63 is confirmed free (checked every
-  # LoadBalancer Service's assigned IP across the cluster, not just the
-  # ones this comment already knew about). externalTrafficPolicy Local so
-  # only the node actually running the pod answers ARP for this IP -- no
-  # extra cross-node hop, and it also means the IP only ever "floats" by
-  # virtue of which node has the pod, not by load-balancing across
-  # replicas (there's only ever one).
-  loadBalancerIP: 10.0.60.63
+  # Moved off the ops-network pool (10.0.60.60-69, where this briefly
+  # sat at .62 then .63 -- see git history) onto a dedicated dmz pool
+  # (10.0.110.2-10.0.110.5, see tynet-infra's roles/metallb-pools) once
+  # that VLAN existed. ops is the hardware nodes' own network; dmz is
+  # specifically for Services that take raw, pre-authentication traffic
+  # from the WAN port forward -- this is the only app in the cluster
+  # that does. cloud-init.tynet.us/argocd.tynet.us/meal-planner-status
+  # stay on ops, untouched; they're reached from the LAN, never the WAN.
+  #
+  # externalTrafficPolicy Local so only the node actually running the
+  # pod answers ARP for this IP -- no extra cross-node hop, and it also
+  # means the IP only ever "floats" by virtue of which node has the pod,
+  # not by load-balancing across replicas (there's only ever one).
+  loadBalancerIP: 10.0.110.2
   externalTrafficPolicy: Local
 
 openvpn:

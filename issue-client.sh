@@ -16,7 +16,14 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 cd "$WORK"
 
-easyrsa --batch init-pki
+# easyrsa's own "Notice"/progress chatter goes to stdout, not stderr --
+# redirected to this script's stderr (1>&2) so it never contaminates the
+# .ovpn profile below, which callers pipe straight from this script's
+# stdout into a file. Found live: a first real enrollment produced a
+# 139-line file where the actual `client` config didn't start until
+# line 34 -- 33 lines of easy-rsa prose ahead of it, which OpenVPN
+# Connect would not have parsed as a valid profile.
+easyrsa --batch init-pki 1>&2
 mkdir -p pki/private pki/issued pki/certs_by_serial pki/revoked/{certs_by_serial,private,reqs}
 cp "$PKI_DIR/ca.crt" pki/ca.crt
 cp "$PKI_DIR/ca.key" pki/private/ca.key
@@ -24,8 +31,8 @@ echo 01 > pki/serial
 : > pki/index.txt
 echo "unique_subject = no" > pki/index.txt.attr
 
-easyrsa --batch gen-req "$NAME" nopass
-easyrsa --batch sign-req client "$NAME"
+easyrsa --batch gen-req "$NAME" nopass 1>&2
+easyrsa --batch sign-req client "$NAME" 1>&2
 
 cat <<EOF
 client

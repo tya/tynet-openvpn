@@ -18,7 +18,15 @@ mkdir -p "$PKI_DIR"
 if kubectl get secret "$PKI_SECRET_NAME" -n "$NAMESPACE" >/dev/null 2>&1; then
   echo "Restoring PKI from Secret/$PKI_SECRET_NAME in $NAMESPACE"
   for key in $PKI_KEYS; do
-    kubectl get secret "$PKI_SECRET_NAME" -n "$NAMESPACE" -o "jsonpath={.data.${key}}" \
+    # Every key here (ca.crt, ta.key, ...) contains a literal dot.
+    # Unescaped, jsonpath parses "." as nested-field traversal
+    # (.data.ca.crt => .data -> .ca -> .crt, which doesn't exist), so
+    # this silently resolved to nothing and wrote an empty file for
+    # every key -- found live, the hard way, on this pod's first real
+    # restore (every earlier test was a fresh bootstrap, which never
+    # exercises this path at all). "\." escapes the dot so jsonpath
+    # treats "ca.crt" as one literal key, not three nested ones.
+    kubectl get secret "$PKI_SECRET_NAME" -n "$NAMESPACE" -o "jsonpath={.data.${key//./\\.}}" \
       | base64 -d > "$PKI_DIR/$key"
   done
   chmod 600 "$PKI_DIR"/*.key "$PKI_DIR/ta.key"
@@ -56,13 +64,19 @@ fi
 USERS_SECRET_NAME="${USERS_SECRET_NAME:-tynet-openvpn-users}"
 if kubectl get secret "$USERS_SECRET_NAME" -n "$NAMESPACE" >/dev/null 2>&1; then
   echo "Restoring enrolled users from Secret/$USERS_SECRET_NAME in $NAMESPACE"
+  # Usernames aren't known ahead of time, so listing them needs a real
+  # range -- kubectl's jsonpath mode doesn't support the "$k,$v :="
+  # multi-variable range-binding form at all (that's Go-template syntax,
+  # a different -o mode entirely); found live, the hard way, as a
+  # "-o jsonpath=" parse error crashing the pod every restore. -o
+  # go-template= does support it correctly.
   while IFS= read -r user; do
     [ -n "$user" ] || continue
     mkdir -p "/etc/openvpn/users/${user}"
-    kubectl get secret "$USERS_SECRET_NAME" -n "$NAMESPACE" -o "jsonpath={.data.${user}}" \
+    kubectl get secret "$USERS_SECRET_NAME" -n "$NAMESPACE" -o "jsonpath={.data.${user//./\\.}}" \
       | base64 -d > "/etc/openvpn/users/${user}/.google_authenticator"
   done < <(kubectl get secret "$USERS_SECRET_NAME" -n "$NAMESPACE" \
-              -o jsonpath="{range \$k,\$v := .data}{\$k}{\"\\n\"}{end}")
+              -o go-template="{{range \$k, \$v := .data}}{{\$k}}{{\"\n\"}}{{end}}")
 fi
 
 # Bridge setup: enslave the tagged VLAN interface that tynet-infra's
